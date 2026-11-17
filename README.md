@@ -1,76 +1,77 @@
 # usb-switch-kvm
 
-Transforma um **switch USB comum** (testado com o **Ugreen CM662**) em um **KVM**:
-quando você aperta o botão do switch, além do teclado e do mouse, o **monitor troca de entrada** sozinho.
+Turns a **plain USB switch** (tested with the **Ugreen CM662**) into a **KVM**:
+when you press the switch button, the **monitor changes input** along with your keyboard and mouse.
 
-Não precisa de KVM, de software do fabricante do monitor nem de nenhuma dependência: é um único script PowerShell usando APIs nativas do Windows.
+No KVM hardware, no monitor vendor software, no dependencies: a single PowerShell script using native Windows APIs.
 
-## Como funciona
+## How it works
 
 ```
- [teclado/mouse] ──► [switch USB Ugreen] ──┬──► Desktop  (DisplayPort no monitor)
-                                           └──► Notebook (HDMI no monitor)
+ [keyboard/mouse] ──► [Ugreen USB switch] ──┬──► Desktop (monitor DisplayPort)
+                                            └──► Laptop  (monitor HDMI)
 ```
 
-1. **Detecção** – o script roda no desktop e escuta os eventos de dispositivo do Windows (`Win32_DeviceChangeEvent`, via WMI/CIM). A cada evento ele verifica se o **hub do switch** (`USB\VID_05E3&PID_0610`, chip Genesys Logic) está presente.
-   - Ele vigia o **hub**, não o teclado: plugar/tirar periféricos não troca a tela, só o botão do switch.
-   - Só age depois que o estado fica estável por 1 s (ignora clique duplo / botão oscilando).
-2. **Troca de entrada** – usa **DDC/CI**, o padrão VESA para controlar o monitor pelo próprio cabo de vídeo, através da *Monitor Configuration API* do Windows (`dxva2.dll`). O código VCP `0x60` (Input Source) recebe:
-   - `0x0F` → DisplayPort, quando o switch está no desktop
-   - `0x11` → HDMI 1, quando o switch vai para o notebook
+1. **Detection** – the script runs on the desktop and listens to Windows device events (`Win32_DeviceChangeEvent`, via WMI/CIM). On every event it checks whether the **switch's own USB hub** (`USB\VID_05E3&PID_0610`, Genesys Logic chip) is present.
+   - It watches the **hub**, not the keyboard: plugging or unplugging peripherals does not change the screen, only the switch button does.
+   - It only acts once the state has been stable for 1 s (ignores double presses / button bounce).
+2. **Input switching** – uses **DDC/CI**, the VESA standard for controlling a monitor over the video cable, through the Windows *Monitor Configuration API* (`dxva2.dll`). VCP code `0x60` (Input Source) is set to:
+   - `0x0F` → DisplayPort, when the switch is on the desktop
+   - `0x11` → HDMI 1, when the switch goes to the laptop
 
-## Requisitos
+## Requirements
 
-- Windows 10/11 no computador que roda o script
-- Monitor com **DDC/CI** habilitado no menu (testado no Samsung Odyssey G5)
-- Um switch USB que apareça como hub no Windows
+- Windows 10/11 on the computer running the script
+- A monitor with **DDC/CI** enabled in its menu (tested on a Samsung Odyssey G5)
+- A USB switch that shows up as a hub in Windows
+- **Turn off the monitor's automatic input switching** (e.g. *Auto Source Switch+* / *Source Detection* on Samsung). Otherwise, when the laptop wakes up (a mouse plugged directly into it is enough), the monitor jumps to HDMI on its own.
 
-## Uso
+## Usage
 
 ```powershell
-# só registra conexões/desconexões do switch (não mexe no monitor)
+# only log switch connects/disconnects (does not touch the monitor)
 .\monitor-switch.ps1
 
-# modo KVM: troca a entrada do monitor junto com o switch
+# KVM mode: change the monitor input together with the switch
 .\monitor-switch.ps1 -Switch
 
-# registra também cada dispositivo USB que entra/sai (diagnóstico)
+# also log every USB device that comes and goes (diagnostics)
 .\monitor-switch.ps1 -Switch -Diag
 
-# utilitários
-.\monitor-switch.ps1 -Get         # mostra a entrada atual do monitor
-.\monitor-switch.ps1 -Set 0x11    # força uma entrada
+# utilities
+.\monitor-switch.ps1 -Get         # show the monitor's current input
+.\monitor-switch.ps1 -Set 0x11    # force an input
 ```
 
-O log fica em `monitor-switch.log`, na mesma pasta do script.
+The log is written to `monitor-switch.log`, next to the script.
 
-Se o PowerShell bloquear o script, rode com `powershell -ExecutionPolicy Bypass -File .\monitor-switch.ps1 -Switch`.
+If PowerShell blocks the script, run it with `powershell -ExecutionPolicy Bypass -File .\monitor-switch.ps1 -Switch`.
 
-## Adaptando para o seu setup
+## Adapting it to your setup
 
-Por enquanto a configuração fica no topo do script:
+For now, configuration lives at the top of the script:
 
-| Variável | Padrão | O que é |
+| Variable | Default | Meaning |
 |---|---|---|
-| `$DeviceIdPrefix` | `USB\VID_05E3&PID_0610\` | ID do hub do switch USB |
-| `$InputDP` | `0x0F` | entrada do monitor quando o switch está neste PC |
-| `$InputHDMI` | `0x11` | entrada do monitor quando o switch sai deste PC |
+| `$DeviceIdPrefix` | `USB\VID_05E3&PID_0610\` | ID of the USB switch's hub |
+| `$InputDP` | `0x0F` | monitor input when the switch is on this PC |
+| `$InputHDMI` | `0x11` | monitor input when the switch leaves this PC |
 
-Para descobrir o ID do seu switch, rode com `-Diag`, aperte o botão e veja qual hub aparece e some no log.
-Para descobrir os códigos de entrada do seu monitor, use `-Get` em cada entrada.
+To find your switch's ID, run with `-Diag`, press the button and see which hub appears and disappears in the log.
+To find your monitor's input codes, run `-Get` on each input.
 
-## Limitações
+## Limitations
 
-- O desktop não sabe para onde o switch foi: desconectar o cabo do switch ou tirá-lo da energia também faz o monitor ir para o HDMI.
-- Ainda não inicia sozinho no logon (planejado).
+- The desktop can't tell where the switch went: unplugging the switch cable or cutting its power also sends the monitor to HDMI.
+- It does not start automatically at logon yet (planned).
 
 ## Roadmap
 
-- [ ] Parâmetros de linha de comando / arquivo de configuração em vez de variáveis no script
-- [ ] Instalação como tarefa agendada no logon
-- [ ] Assistente para descobrir o ID do switch e as entradas do monitor
-- [ ] Suporte a mais de um monitor
+- [ ] Command-line parameters / config file instead of variables in the script
+- [ ] Install as a scheduled task at logon
+- [ ] Wizard to discover the switch ID and monitor inputs
+- [ ] Multi-monitor support
 
-## Licença
+## License
 
 MIT
