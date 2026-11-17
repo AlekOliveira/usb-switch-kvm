@@ -47,6 +47,34 @@ The log is written to `monitor-switch.log`, next to the script.
 
 If PowerShell blocks the script, run it with `powershell -ExecutionPolicy Bypass -File .\monitor-switch.ps1 -Switch`.
 
+## Start automatically at logon
+
+Register a scheduled task that runs the script hidden every time you sign in (no admin needed). Run this from the folder that contains the script:
+
+```powershell
+$script = (Resolve-Path .\monitor-switch.ps1).Path
+$user   = "$env:USERDOMAIN\$env:USERNAME"
+$action = New-ScheduledTaskAction -Execute 'conhost.exe' `
+  -Argument "--headless powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$script`" -Switch"
+$trigger  = New-ScheduledTaskTrigger -AtLogOn -User $user
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+  -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
+  -MultipleInstances IgnoreNew
+$principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+Register-ScheduledTask -TaskName 'USB Switch KVM' -Action $action -Trigger $trigger `
+  -Settings $settings -Principal $principal
+Start-ScheduledTask -TaskName 'USB Switch KVM'   # start it now, without signing out
+```
+
+The task points to the script's current path, so don't move the folder afterwards (or re-register the task).
+
+To remove it:
+
+```powershell
+Stop-ScheduledTask 'USB Switch KVM'
+Unregister-ScheduledTask 'USB Switch KVM' -Confirm:$false
+```
+
 ## Adapting it to your setup
 
 For now, configuration lives at the top of the script:
@@ -63,12 +91,12 @@ To find your monitor's input codes, run `-Get` on each input.
 ## Limitations
 
 - The desktop can't tell where the switch went: unplugging the switch cable or cutting its power also sends the monitor to HDMI.
-- It does not start automatically at logon yet (planned).
 
 ## Roadmap
 
 - [ ] Command-line parameters / config file instead of variables in the script
-- [ ] Install as a scheduled task at logon
+- [x] Start automatically at logon (scheduled task)
+- [ ] Built-in `-Install` / `-Uninstall` switches
 - [ ] Wizard to discover the switch ID and monitor inputs
 - [ ] Multi-monitor support
 
